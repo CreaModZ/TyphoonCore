@@ -110,10 +110,8 @@ func (c *Core) keepAlive() {
 		for _, player := range players {
 			if player.state == PLAY {
 				if player.keepalive != 0 {
-					fmt.Println("KICK DU JOUEUR POUR TIME OUT")
 					player.Kick("Timed out")
 				}
-
 				id := int(r.Int31())
 				keepalive.Identifier = id
 				player.keepalive = id
