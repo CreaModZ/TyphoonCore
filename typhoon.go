@@ -7,6 +7,15 @@ import (
 	"net"
 	"reflect"
 	"time"
+	"os"
+	"syscall"
+	"os/signal"
+	"fmt"
+	"strings"
+)
+
+var (
+	started	= false
 )
 
 type Core struct {
@@ -40,11 +49,20 @@ func Init() *Core {
 }
 
 func (c *Core) Start() {
+	if started {
+		log.Fatal("Server already started!")
+		return
+	}
+	addShutdownHook(func() {
+		c.Stop()
+	})
 	ln, err := net.Listen("tcp", config.ListenAddress)
 	if err != nil {
 		log.Fatal(err)
 	}
+	started = true
 	log.Println("Server launched on port", config.ListenAddress)
+	go c.initConsole()
 	go c.keepAlive()
 	for {
 		conn, err := ln.Accept()
@@ -57,8 +75,29 @@ func (c *Core) Start() {
 	}
 }
 
+func (c *Core) Stop() {
+	if !started {
+		log.Fatal("Server is not started!")
+		return
+	}
+	log.Println("Stopping server...")
+	started = false
+	c.CallEvent(&ServerStopEvent{})
+	playersMutex.Lock()
+	for _, player := range players {
+		player.Kick("Server is closed")
+	}
+	playersMutex.Unlock()
+	time.Sleep(1 * time.Second)
+	os.Exit(0)
+}
+
 func (c *Core) SetBrand(brand string) {
 	c.brand = brand
+}
+
+func (c *Core) GetOnlinePlayers() map[int]*Player {
+	return players
 }
 
 func (c *Core) keepAlive() {
@@ -71,6 +110,7 @@ func (c *Core) keepAlive() {
 		for _, player := range players {
 			if player.state == PLAY {
 				if player.keepalive != 0 {
+					fmt.Println("KICK DU JOUEUR POUR TIME OUT")
 					player.Kick("Timed out")
 				}
 
@@ -119,4 +159,34 @@ func (c *Core) handleConnection(conn net.Conn, id int) {
 	player.unregister()
 	conn.Close()
 	log.Printf("%s(#%d) disconnected.", conn.RemoteAddr().String(), id)
+}
+
+func (c *Core) initConsole() {
+	for {
+		consoleReader := bufio.NewReader(os.Stdin)
+		fmt.Print("> ")
+		input, _ := consoleReader.ReadString('\n')
+		input = strings.ToLower(input)
+		// ToDo: commands
+		if strings.HasPrefix(input, "stop") {
+			c.Stop()
+			os.Exit(0)
+		}
+	}
+}
+
+func addShutdownHook(functions ...func()) {
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	go func() {
+		for {
+			s := <-signals
+			switch s {
+			case syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT:
+				for _, f := range functions {
+					f()
+				}
+			}
+		}
+	}()
 }

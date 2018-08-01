@@ -33,6 +33,8 @@ type PluginMessageEvent struct {
 	Data    []byte
 }
 
+type ServerStopEvent struct {}
+
 func (c *Core) On(handler interface{}) {
 	typ := reflect.TypeOf(handler).In(0)
 	cb := EventCallback{handler, nil}
